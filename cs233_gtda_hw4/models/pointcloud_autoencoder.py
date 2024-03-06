@@ -8,6 +8,7 @@ Copyright (c) 2020 Panos Achlioptas (pachlioptas@gmail.com) & Stanford Geometric
 
 import torch
 from torch import nn
+from tqdm.autonotebook import tqdm
 from ..in_out.utils import AverageMeter
 # from ..losses.chamfer import chamfer_loss
 
@@ -46,10 +47,17 @@ class PointcloudAutoencoder(nn.Module):
         self.train()
         loss_meter = AverageMeter()
 
-        for load in loader:
+        for load in tqdm(loader):
+            optimizer.zero_grad()
+
             pointclouds = load['point_cloud']
             reconstructions = self.forward(pointclouds)
-            loss_meter.update(chamfer_loss(pointclouds, reconstructions))
+            loss = chamfer_loss(pointclouds, reconstructions).sum()
+
+            loss.backward()
+            optimizer.step()
+
+            loss_meter.update(loss, pointclouds.shape[0])
 
         return loss_meter.avg
     
@@ -67,6 +75,16 @@ class PointcloudAutoencoder(nn.Module):
         """ Reconstruct the point-clouds via the AE.
         :param loader: pointcloud_dataset loader
         :param device: cpu? cuda?
-        :return: Left for students to decide
+        :return: (float), average loss for the loader
         """
-        raise NotImplementedError
+        self.eval()
+        loss_meter = AverageMeter()
+
+        for load in tqdm(loader):
+            pointclouds = load['point_cloud']
+            reconstructions = self.forward(pointclouds)
+            loss = chamfer_loss(pointclouds, reconstructions).sum()
+
+            loss_meter.update(loss, pointclouds.shape[0])
+
+        return loss_meter.avg

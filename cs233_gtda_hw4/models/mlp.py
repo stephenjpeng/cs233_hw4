@@ -39,15 +39,19 @@ class MLP(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
 
         self.layers = nn.ParameterList()
-        for i in range(1, self.k):
+        for i in range(1, self.k - 1):
             self.layers.append(
                 nn.Sequential(
                     nn.Linear(self.c_dims[i-1], self.c_dims[i]),
                     self.nonlin,
-                    self.dropout if i < (self.k - 1) else nn.Identity(),
+                    self.dropout,
                     nn.BatchNorm1d(out_channels[i]) if self.b_norm[i] else nn.Identity()
                 )
             )
+        # output
+        self.layers.append(
+            nn.Linear(self.c_dims[-2], self.c_dims[-1])
+        )
 
 
         
