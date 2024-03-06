@@ -80,11 +80,13 @@ class PointcloudAutoencoder(nn.Module):
         self.eval()
         loss_meter = AverageMeter()
 
+        reconstructions = []
         for load in tqdm(loader):
             pointclouds = load['point_cloud'].to(device)
-            reconstructions = self.forward(pointclouds)
-            loss = chamfer_loss(pointclouds, reconstructions).sum()
+            reconstruction = self.forward(pointclouds)
+            loss = chamfer_loss(pointclouds, reconstruction).sum()
 
             loss_meter.update(loss, pointclouds.shape[0])
+            reconstructions += list(reconstruction)
 
-        return loss_meter.avg
+        return reconstructions, loss_meter.avg
