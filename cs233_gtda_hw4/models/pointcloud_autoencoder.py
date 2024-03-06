@@ -10,11 +10,11 @@ import torch
 from torch import nn
 from tqdm.autonotebook import tqdm
 from ..in_out.utils import AverageMeter
-# from ..losses.chamfer import chamfer_loss
+from ..losses.chamfer import chamfer_loss
 
 # In the unlikely case where you cannot use the JIT chamfer implementation (above) you can use the slower
 # one that is written in pure pytorch:
-from ..losses.nn_distance import chamfer_loss
+# from ..losses.nn_distance import chamfer_loss
 
 
 class PointcloudAutoencoder(nn.Module):
@@ -50,7 +50,7 @@ class PointcloudAutoencoder(nn.Module):
         for load in tqdm(loader):
             optimizer.zero_grad()
 
-            pointclouds = load['point_cloud']
+            pointclouds = load['point_cloud'].to(device)
             reconstructions = self.forward(pointclouds)
             loss = chamfer_loss(pointclouds, reconstructions).sum()
 
@@ -81,7 +81,7 @@ class PointcloudAutoencoder(nn.Module):
         loss_meter = AverageMeter()
 
         for load in tqdm(loader):
-            pointclouds = load['point_cloud']
+            pointclouds = load['point_cloud'].to(device)
             reconstructions = self.forward(pointclouds)
             loss = chamfer_loss(pointclouds, reconstructions).sum()
 
