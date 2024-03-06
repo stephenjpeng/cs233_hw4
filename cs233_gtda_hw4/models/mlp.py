@@ -27,8 +27,28 @@ class MLP(nn.Module):
         :param dropout_rate: int, or list of int values
         :param non_linearity: nn.Module
         """
-        super(MLP, self).__init__()
-        raise NotImplementedError
+        super().__init__()
+        # parameters
+        self.k = len(out_channels) + 1
+        self.b_norm = b_norm if isinstance(b_norm, list) else [b_norm] * len(out_channels) + [False]
+        self.c_dims = [in_feat_dim] + out_channels
+        assert not self.b_norm[-1], "Batch norm applied after output!"
+
+        # modules
+        self.nonlin = non_linearity
+        self.dropout = nn.Dropout(dropout_rate)
+
+        self.layers = nn.ParameterList()
+        for i in range(1, self.k):
+            self.layers.append(
+                nn.Sequential(
+                    nn.Linear(self.c_dims[i-1], self.c_dims[i]),
+                    self.nonlin,
+                    self.dropout if i < (self.k - 1) else nn.Identity(),
+                    nn.BatchNorm1d(out_channels[i]) if self.b_norm[i] else nn.Identity()
+                )
+            )
+
 
         
     def forward(self, x):
@@ -36,4 +56,6 @@ class MLP(nn.Module):
         Run forward pass of MLP
         :param x: (B x in_feat_dim) point cloud
         """
-        raise NotImplementedError
+        for layer in self.layers:
+            x = layer(x)
+        return x

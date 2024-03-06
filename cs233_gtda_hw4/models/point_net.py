@@ -22,8 +22,19 @@ class PointNet(nn.Module):
         :param init_feat_dim: input point dimensionality (default 3 for xyz)
         :param conv_dims: output point dimensionality of each layer
         """
-        super(PointNet, self).__init__()
-        raise NotImplementedError
+        super().__init__()
+        self.dims = [init_feat_dim] + conv_dims
+        self.k = len(self.dims)
+
+        self.convs = nn.ParameterList()
+        for i in range(1, self.k):
+            self.convs.append(
+                nn.Sequential(
+                    nn.Conv1d(self.dims[i-1], self.dims[i], 1),
+                    nn.ReLU() if i < (self.k - 1) else nn.Identity()
+                )
+            )
+        self.pool = nn.MaxPool1d(1)
         
         
     def forward(self, pointclouds):
@@ -31,4 +42,8 @@ class PointNet(nn.Module):
         Run forward pass of the PointNet model on a given point cloud.
         :param pointclouds: (B x N x 3) point cloud
         """
-        raise NotImplementedError
+        x = pointclouds
+        for layer in self.convs:
+            x = layer(x)
+        x = x.permute((0, 2, 1))
+        return self.pool(x)
