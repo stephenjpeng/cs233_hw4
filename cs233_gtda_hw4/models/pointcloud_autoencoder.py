@@ -53,7 +53,7 @@ class PointcloudAutoencoder(nn.Module):
 
             pointclouds = load['point_cloud'].to(device)
             reconstructions = self.forward(pointclouds)
-            loss = chamfer_loss(pointclouds, reconstructions).sum()
+            loss = chamfer_loss(pointclouds, reconstructions).mean()
 
             loss.backward()
             optimizer.step()

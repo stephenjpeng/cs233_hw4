@@ -75,18 +75,18 @@ class PartAwarePointcloudAutoencoder(nn.Module):
             pointclouds = load['point_cloud'].to(device)
             true_labels = load['part_mask'].to(device) # .flatten()
             reconstructions, labels = self.forward(pointclouds)
-            # labels = labels.reshape(-1, labels.shape[-1])
 
-            recon_loss = chamfer_loss(pointclouds, reconstructions).sum()
-            xentr_loss = F.cross_entropy(labels, true_labels, reduction='mean')
+            recon_loss = chamfer_loss(pointclouds, reconstructions).mean()
+            xentr_loss = F.cross_entropy(labels, true_labels, reduction='none')
+            xentr_loss = xentr_loss.mean()
 
             loss = recon_loss + self.part_lambda * xentr_loss
             loss.backward()
             optimizer.step()
 
             loss_meter.update(loss, pointclouds.shape[0])
-            recon_loss_meter.update(loss, pointclouds.shape[0])
-            xentr_loss_meter.update(loss, pointclouds.shape[0])
+            recon_loss_meter.update(recon_loss, pointclouds.shape[0])
+            xentr_loss_meter.update(xentr_loss, pointclouds.shape[0])
 
         return loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg
     
@@ -118,19 +118,19 @@ class PartAwarePointcloudAutoencoder(nn.Module):
 
         for load in loader:
             pointclouds = load['point_cloud'].to(device)
-            true_labels = load['part_mask'].to(device)  # .flatten()
+            true_labels = load['part_mask'].to(device) 
             reconstruction, labels = self.forward(pointclouds)
-            # labels = labels.reshape(-1, labels.shape[-1])
 
             recon_losses = chamfer_loss(pointclouds, reconstruction)
             recon_loss = recon_losses.mean()
-            xentr_loss = F.cross_entropy(labels, true_labels, reduction='mean')
+            xentr_loss = F.cross_entropy(labels, true_labels, reduction='none')
+            xentr_loss = xentr_loss.mean()
 
             loss = recon_loss + self.part_lambda * xentr_loss
 
             loss_meter.update(loss, pointclouds.shape[0])
-            recon_loss_meter.update(loss, pointclouds.shape[0])
-            xentr_loss_meter.update(loss, pointclouds.shape[0])
+            recon_loss_meter.update(recon_loss, pointclouds.shape[0])
+            xentr_loss_meter.update(xentr_loss, pointclouds.shape[0])
 
             reconstructions += list(reconstruction)
             if return_all_recon_loss:
