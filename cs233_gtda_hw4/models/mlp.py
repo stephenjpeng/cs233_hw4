@@ -63,4 +63,4 @@ class MLP(nn.Module):
         B, k = x.shape
         for layer in self.layers:
             x = layer(x)
-        return x.view(B, k, 3)
+        return x.view(B, -1, 3)
