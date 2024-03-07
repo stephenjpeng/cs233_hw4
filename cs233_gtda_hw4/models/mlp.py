@@ -60,6 +60,7 @@ class MLP(nn.Module):
         Run forward pass of MLP
         :param x: (B x in_feat_dim) point cloud
         """
+        B, k = x.shape
         for layer in self.layers:
             x = layer(x)
-        return x
+        return x.view(B, k, 3)

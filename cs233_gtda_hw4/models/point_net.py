@@ -34,7 +34,7 @@ class PointNet(nn.Module):
                     nn.ReLU() if i < (self.k - 1) else nn.Identity()
                 )
             )
-        self.pool = nn.MaxPool1d(1)
+        self.pool = nn.MaxPool1d(self.dims[-1])
         
         
     def forward(self, pointclouds):
@@ -42,8 +42,8 @@ class PointNet(nn.Module):
         Run forward pass of the PointNet model on a given point cloud.
         :param pointclouds: (B x N x 3) point cloud
         """
-        x = pointclouds
+        x = pointclouds.permute(0, 2, 1)
+        N = x.shape[-1]
         for layer in self.convs:
             x = layer(x)
-        x = x.permute((0, 2, 1))
-        return self.pool(x)
+        return F.max_pool1d(x, N).squeeze(-1)
