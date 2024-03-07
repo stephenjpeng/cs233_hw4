@@ -10,11 +10,13 @@ import torch
 from torch import nn
 from tqdm.autonotebook import tqdm
 from ..in_out.utils import AverageMeter
-from ..losses.chamfer import chamfer_loss
 
-# In the unlikely case where you cannot use the JIT chamfer implementation (above) you can use the slower
-# one that is written in pure pytorch:
-# from ..losses.nn_distance import chamfer_loss
+if torch.cuda.is_available():
+    from ..losses.chamfer import chamfer_loss
+else:
+    # In the unlikely case where you cannot use the JIT chamfer implementation (above) you can use the slower
+    # one that is written in pure pytorch:
+    from ..losses.nn_distance import chamfer_loss
 
 
 class PointcloudAutoencoder(nn.Module):
