@@ -11,11 +11,11 @@ from torch import nn
 import torch.nn.functional as F
 from tqdm.autonotebook import tqdm
 from ..in_out.utils import AverageMeter
-# from ..losses.chamfer import chamfer_loss
+from ..losses.chamfer import chamfer_loss
 
 # In the unlikely case where you cannot use the JIT chamfer implementation (above) you can use the slower
 # one that is written in pure pytorch:
-from ..losses.nn_distance import chamfer_loss
+# from ..losses.nn_distance import chamfer_loss
 
 class PartAwarePointcloudAutoencoder(nn.Module):
     def __init__(self, encoder, decoder, part_classifier, part_lambda):
@@ -49,7 +49,7 @@ class PartAwarePointcloudAutoencoder(nn.Module):
             h.unsqueeze(1).expand(-1, N, -1)
         ), dim=2)
         y = self.part_classifier(class_input)
-        y = y.permute(0, 2, 1)
+        # y = y.permute(0, 2, 1)
 
         return x, y
 
@@ -70,12 +70,12 @@ class PartAwarePointcloudAutoencoder(nn.Module):
             optimizer.zero_grad()
 
             pointclouds = load['point_cloud'].to(device)
-            true_labels = load['part_mask'].to(device).flatten()
+            true_labels = load['part_mask'].to(device) # .flatten()
             reconstructions, labels = self.forward(pointclouds)
-            labels = labels.reshape(-1, labels.shape[-1])
+            # labels = labels.reshape(-1, labels.shape[-1])
 
             recon_loss = chamfer_loss(pointclouds, reconstructions).sum()
-            xentr_loss = F.cross_entropy(labels, true_labels, reduction='sum')
+            xentr_loss = F.cross_entropy(labels, true_labels, reduction='mean')
 
             loss = recon_loss + self.part_lambda * xentr_loss
             loss.backward()
@@ -111,12 +111,12 @@ class PartAwarePointcloudAutoencoder(nn.Module):
         reconstructions = []
         for load in loader:
             pointclouds = load['point_cloud'].to(device)
-            true_labels = load['part_mask'].to(device).flatten()
+            true_labels = load['part_mask'].to(device)  # .flatten()
             reconstruction, labels = self.forward(pointclouds)
-            labels = labels.reshape(-1, labels.shape[-1])
+            # labels = labels.reshape(-1, labels.shape[-1])
 
-            recon_loss = chamfer_loss(pointclouds, reconstructions).sum()
-            xentr_loss = F.cross_entropy(labels, true_labels, reduction='sum')
+            recon_loss = chamfer_loss(pointclouds, reconstruction).sum()
+            xentr_loss = F.cross_entropy(labels, true_labels, reduction='mean')
 
             loss = recon_loss + self.part_lambda * xentr_loss
 
@@ -129,7 +129,7 @@ class PartAwarePointcloudAutoencoder(nn.Module):
         return reconstructions, labels, loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg
 
     @torch.no_grad()
-    def reconstruct_single(self, pointcloud, true_labels, device='cuda'):
+    def reconstruct_single(self, pointcloud, true_labels, device='cuda', return_logits=False):
         """ Reconstruct the point-cloud via the AE.
         :param pointcloud: pointcloud_data
         :param device: cpu? cuda?
@@ -139,4 +139,7 @@ class PartAwarePointcloudAutoencoder(nn.Module):
             'point_cloud': pointcloud.unsqueeze(0),
             'part_mask': true_labels.unsqueeze(0),
         }], device)
+
+        if not return_logits:
+            l = torch.argmax(l, 1)
         return r[0].squeeze(0), l, l1, l2, l3
