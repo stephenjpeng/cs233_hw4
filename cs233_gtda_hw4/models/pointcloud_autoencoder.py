@@ -72,24 +72,33 @@ class PointcloudAutoencoder(nn.Module):
         
 
     @torch.no_grad()
-    def reconstruct(self, loader, device='cuda'):
+    def reconstruct(self, loader, device='cuda', return_all_recon_loss=False):
         """ Reconstruct the point-clouds via the AE.
         :param loader: pointcloud_dataset loader
         :param device: cpu? cuda?
+        :param return_all_recon_loss: whether to log and return all losses
         :return: (reconstructions, float), average loss for the loader
         """
         self.eval()
         loss_meter = AverageMeter()
 
         reconstructions = []
+        if return_all_recon_loss:
+            all_recon_loss = []
+
         for load in tqdm(loader):
             pointclouds = load['point_cloud'].to(device)
             reconstruction = self.forward(pointclouds)
-            loss = chamfer_loss(pointclouds, reconstruction).sum()
+            recon_losses = chamfer_loss(pointclouds, reconstruction)
+            loss = recon_losses.mean()
 
             loss_meter.update(loss, pointclouds.shape[0])
             reconstructions += list(reconstruction)
+            if return_all_recon_loss:
+                all_recon_loss += list(recon_losses)
 
+        if return_all_recon_loss:
+            return reconstructions, loss_meter.avg, all_recon_loss
         return reconstructions, loss_meter.avg
 
     @torch.no_grad()

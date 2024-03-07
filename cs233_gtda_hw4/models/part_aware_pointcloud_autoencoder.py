@@ -100,10 +100,11 @@ class PartAwarePointcloudAutoencoder(nn.Module):
         
 
     @torch.no_grad()
-    def reconstruct(self, loader, device='cuda'):
+    def reconstruct(self, loader, device='cuda', return_all_recon_loss=False):
         """ Reconstruct the point-clouds via the AE.
         :param loader: pointcloud_dataset loader
         :param device: cpu? cuda?
+        :param return_all_recon_loss: whether to log and return all losses
         :return: (reconstructions, float), average loss for the loader
         """
         self.eval()
@@ -112,13 +113,17 @@ class PartAwarePointcloudAutoencoder(nn.Module):
         xentr_loss_meter = AverageMeter()
 
         reconstructions = []
+        if return_all_recon_loss:
+            all_recon_loss = []
+
         for load in loader:
             pointclouds = load['point_cloud'].to(device)
             true_labels = load['part_mask'].to(device)  # .flatten()
             reconstruction, labels = self.forward(pointclouds)
             # labels = labels.reshape(-1, labels.shape[-1])
 
-            recon_loss = chamfer_loss(pointclouds, reconstruction).sum()
+            recon_losses = chamfer_loss(pointclouds, reconstruction)
+            recon_loss = recon_losses.mean()
             xentr_loss = F.cross_entropy(labels, true_labels, reduction='mean')
 
             loss = recon_loss + self.part_lambda * xentr_loss
@@ -128,7 +133,11 @@ class PartAwarePointcloudAutoencoder(nn.Module):
             xentr_loss_meter.update(loss, pointclouds.shape[0])
 
             reconstructions += list(reconstruction)
+            if return_all_recon_loss:
+                all_recon_loss += list(recon_losses)
 
+        if return_all_recon_loss:
+            return reconstructions, labels, loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg, all_recon_loss
         return reconstructions, labels, loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg
 
     @torch.no_grad()
