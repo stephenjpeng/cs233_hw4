@@ -48,7 +48,7 @@ class PartAwarePointcloudAutoencoder(nn.Module):
             pointclouds,
             h.unsqueeze(1).expand(-1, N, -1)
         ), dim=2)
-        y = self.part_classifier(class_input)
+        y = self.part_classifier(class_input)  # (B, C, N)
         # y = y.permute(0, 2, 1)
 
         return x, y
