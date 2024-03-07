@@ -113,7 +113,7 @@ class PartAwarePointcloudAutoencoder(nn.Module):
             pointclouds = load['point_cloud'].to(device)
             true_labels = load['part_mask'].to(device).flatten()
             reconstruction, labels = self.forward(pointclouds)
-            labels = labels.view(-1, labels.shape[-1])
+            labels = labels.reshape(-1, labels.shape[-1])
 
             recon_loss = chamfer_loss(pointclouds, reconstructions).sum()
             xentr_loss = F.cross_entropy(labels, true_labels, reduction='sum')
