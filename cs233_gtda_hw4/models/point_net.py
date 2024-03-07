@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class PointNet(nn.Module):
-    def __init__(self, init_feat_dim=3, conv_dims=[32, 64, 64, 128, 128], student_optional_hyper_param=None):
+    def __init__(self, init_feat_dim=3, conv_dims=[32, 64, 64, 128, 128], max_pool=True):
         """
         Students:
         You can make a generic function that instantiates a point-net with arbitrary hyper-parameters,
@@ -25,6 +25,7 @@ class PointNet(nn.Module):
         super().__init__()
         self.dims = [init_feat_dim] + conv_dims
         self.k = len(self.dims)
+        self.max_pool = max_pool
 
         self.convs = nn.ParameterList()
         for i in range(1, self.k):
@@ -34,7 +35,6 @@ class PointNet(nn.Module):
                     nn.ReLU() if i < (self.k - 1) else nn.Identity()
                 )
             )
-        self.pool = nn.MaxPool1d(self.dims[-1])
         
         
     def forward(self, pointclouds):
@@ -46,4 +46,6 @@ class PointNet(nn.Module):
         N = x.shape[-1]
         for layer in self.convs:
             x = layer(x)
-        return F.max_pool1d(x, N).squeeze(-1)
+        if self.max_pool:
+            x = F.max_pool1d(x, N)
+        return x.squeeze(-1)
