@@ -23,6 +23,6 @@ __pycache__/
 
 cs233_gtda_hw4/notebooks/.ipynb_checkpoints/
 cs233_gtda_hw4/.ipynb_checkpoints/*
-# cs233_gtda_hw4/data/out/*
+cs233_gtda_hw4/data/out/*
 cs233_gtda_hw4/data/images/*.png
 cs233_gtda_hw4/data/logs/*
