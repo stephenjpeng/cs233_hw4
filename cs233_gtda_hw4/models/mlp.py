@@ -6,7 +6,7 @@ Originally created at 5/22/20, for Python 3.x
 Copyright (c) 2020 Panos Achlioptas (pachlioptas@gmail.com) & Stanford Geometric Computing Lab.
 """
 
-
+import torch
 from torch import nn
 
 
@@ -53,7 +53,7 @@ class MLP(nn.Module):
         )
 
 
-        
+
     def forward(self, x):
         """
         Run forward pass of MLP
@@ -63,3 +63,11 @@ class MLP(nn.Module):
         for layer in self.layers:
             x = layer(x)
         return x.view(B, -1, 3)
+
+
+    def l1_loss(self):
+        """
+        Calculate L1 of parameters
+        """
+        params = torch.cat([x.view(-1) for x in self.parameters()])
+        return torch.norm(params, 1)

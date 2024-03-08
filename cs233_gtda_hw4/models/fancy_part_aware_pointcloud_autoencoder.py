@@ -17,18 +17,23 @@ else:
 
 
 class FancyPartAwarePointcloudAutoencoder(nn.Module):
-    def __init__(self, encoder, decoder, part_classifier, part_lambda):
+    def __init__(self, encoder, decoder, part_classifier, part_lambda, class_decay=1,
+            decode_alpha=0.1):
         """ Part-aware AE initialization
         :param encoder: nn.Module acting as a point-cloud encoder.
         :param decoder: nn.Module acting as a point-cloud decoder.
         :param part_classifier: nn.Module acting as the second decoding branch that classifies the point part
-        labels.
+        :param part_lambda: scalar multiple for the part classification loss
+        :param class_decay: scalar multiple to decay the classification loss contribution
+        :param decode_alpha: coefficient of L1 regularization on decoder
         """
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.part_classifier = part_classifier
         self.part_lambda = part_lambda
+        self.class_decay = class_decay
+        self.decode_alpha = decode_alpha
 
 
     def forward(self, pointclouds):
@@ -77,6 +82,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             xentr_loss = xentr_loss.mean()
 
             loss = recon_loss + self.part_lambda * xentr_loss
+            loss += self.decode_alpha * self.decoder.l1_loss()
             loss.backward()
             optimizer.step()
 
@@ -84,6 +90,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             recon_loss_meter.update(recon_loss, pointclouds.shape[0])
             xentr_loss_meter.update(xentr_loss, pointclouds.shape[0])
 
+        self.part_lambda *= self.class_decay
         return loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg
     
     @torch.no_grad()
