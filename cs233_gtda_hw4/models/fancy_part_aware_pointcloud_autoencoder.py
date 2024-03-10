@@ -17,8 +17,8 @@ else:
 
 
 class FancyPartAwarePointcloudAutoencoder(nn.Module):
-    def __init__(self, encoder, decoder, part_classifier, part_lambda, class_decay=1, class_decay_cadence=50,
-            decode_alpha=0.0, variational=False, kl_lambda=0):
+    def __init__(self, encoder, decoder, part_classifier, part_lambda, device, class_decay=1, class_decay_cadence=50,
+            decode_alpha=0.0, variational=False, kl_lambda=0, kl_decay=1, kl_decay_cadence=50, noise=0):
         """ Part-aware AE initialization
         :param encoder: nn.Module acting as a point-cloud encoder.
         :param decoder: nn.Module acting as a point-cloud decoder.
@@ -28,6 +28,9 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         :param class_decay_cadence: decay class loss contribution every _ epochs
         :param decode_alpha: coefficient of L1 regularization on decoder
         :param variational: use variational AE
+        :param vae_decay: scalar multiple to decay the KL divergence contribution
+        :param vae_decay_cadence: decay KL loss contribution every _ epochs
+        :param noise: variance of normal noise to add to inputs
         """
         super().__init__()
         self.encoder = encoder
@@ -40,6 +43,11 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
 
         self.variational = variational
         self.kl_lambda = kl_lambda
+        self.kl_decay = kl_decay
+        self.kl_decay_cadence = kl_decay_cadence
+        self.noise = noise
+
+        self.device = device
 
         self.epoch = 0
 
@@ -50,12 +58,18 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             :return: (reconstruction, label)
         """
         B, N, _ = pointclouds.shape
+
+        if self.training:
+            pointclouds = pointclouds + self.noise * torch.randn(pointclouds.shape).to(self.device)
         h = self.encoder(pointclouds)  # B x latent_dim
 
         if self.variational:
             mu, logvar = torch.split(h, h.shape[-1] // 2, dim=-1) # each B x latent_dim / 2
             sigma = torch.exp(logvar / 2)
-            z = mu + sigma * torch.randn(sigma.shape)
+            if self.training:
+                z = mu + sigma * torch.randn(sigma.shape).to(self.device)
+            else:
+                z = mu
         else:
             z = h
 
@@ -65,7 +79,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         # part prediction branch
         class_input = torch.cat((
             pointclouds,
-            z.unsqueeze(1).expand(-1, N, -1)
+            mu.unsqueeze(1).expand(-1, N, -1)
         ), dim=2)
         y = self.part_classifier(class_input)  # (B, C, N)
 
@@ -102,7 +116,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             xentr_loss = F.cross_entropy(labels, true_labels, reduction='none')
             xentr_loss = xentr_loss.mean()
             if self.variational:
-                kl_loss = - (1 + (torch.log(sigma) * 2) - torch.pow(mu, 2) - sigma * 2).sum() / 2
+                kl_loss = - (1 + (torch.log(sigma) * 2) - torch.pow(mu, 2) - sigma * 2).mean() / 2
             else:
                 kl_loss = 0
 
@@ -120,6 +134,8 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
 
         if self.epoch % self.class_decay_cadence == 0:
             self.part_lambda *= self.class_decay
+        if self.epoch % self.kl_decay_cadence == 0:
+            self.kl_lambda *= self.kl_decay
         return loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg, kl_loss_meter.avg
     
     @torch.no_grad()
@@ -128,7 +144,10 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         :param pointclouds: B x N x 3
         :return: B x latent-dimension of AE
         """
-        return self.encoder(pointclouds)
+        h = self.encoder(pointclouds)
+        if self.variational:  # return mean of distribution
+            return torch.split(h, h.shape[-1] // 2, -1)[0]
+        return h
         
 
     @torch.no_grad()
@@ -163,7 +182,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             xentr_loss = xentr_loss.mean()
 
             if self.variational:
-                kl_loss = - (1 + (torch.log(sigma) * 2) - torch.pow(mu, 2) - sigma * 2).sum() / 2
+                kl_loss = - (1 + 2 * torch.log(sigma) - (torch.pow(mu, 2) + torch.pow(sigma, 2))).mean() / 2
             else:
                 kl_loss = 0
 
@@ -196,11 +215,11 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         :param device: cpu? cuda?
         :return: (reconstruction, float), average loss for the loader
         """
-        r, l, l1, l2, l3 = self.reconstruct([{
+        r, l = self.reconstruct([{
             'point_cloud': pointcloud.unsqueeze(0),
             'part_mask': true_labels.unsqueeze(0),
-        }], device)
+            }], device)[:2]
 
         if not return_logits:
             l = torch.argmax(l, 1)
-        return r[0].squeeze(0), l, l1, l2, l3
+        return r[0].squeeze(0), l
