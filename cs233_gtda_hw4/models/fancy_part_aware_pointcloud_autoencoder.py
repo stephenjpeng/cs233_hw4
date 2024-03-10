@@ -17,8 +17,10 @@ else:
 
 
 class FancyPartAwarePointcloudAutoencoder(nn.Module):
-    def __init__(self, encoder, decoder, part_classifier, part_lambda, device, class_decay=1, class_decay_cadence=50,
-            decode_alpha=0.0, variational=False, kl_lambda=0, kl_decay=1, kl_decay_cadence=50, noise=0):
+    def __init__(self, encoder, decoder, part_classifier, part_lambda, device,
+            class_decay=1, class_decay_cadence=50, decode_alpha=0.0, predict_parts=True,
+            variational=False, kl_lambda=0, kl_decay=1, kl_decay_cadence=50, noise=0,
+            encode_parts=False):
         """ Part-aware AE initialization
         :param encoder: nn.Module acting as a point-cloud encoder.
         :param decoder: nn.Module acting as a point-cloud decoder.
@@ -27,12 +29,17 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         :param class_decay: scalar multiple to decay the classification loss contribution
         :param class_decay_cadence: decay class loss contribution every _ epochs
         :param decode_alpha: coefficient of L1 regularization on decoder
+        :param predict_parts: predict parts
         :param variational: use variational AE
         :param vae_decay: scalar multiple to decay the KL divergence contribution
         :param vae_decay_cadence: decay KL loss contribution every _ epochs
         :param noise: variance of normal noise to add to inputs
+        :param encode_parts: autoencode the parts
         """
         super().__init__()
+        # not changing anytime soon
+        self.num_parts = 4
+
         self.encoder = encoder
         self.decoder = decoder
         self.part_classifier = part_classifier
@@ -41,11 +48,15 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         self.class_decay_cadence = class_decay_cadence
         self.decode_alpha = decode_alpha
 
+        self.predict_parts = predict_parts
+
         self.variational = variational
         self.kl_lambda = kl_lambda
         self.kl_decay = kl_decay
         self.kl_decay_cadence = kl_decay_cadence
         self.noise = noise
+
+        self.encode_parts = encode_parts
 
         self.device = device
 
@@ -77,15 +88,21 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         x = self.decoder(z)  # B x out_pts x 3
 
         # part prediction branch
-        class_input = torch.cat((
-            pointclouds,
-            mu.unsqueeze(1).expand(-1, N, -1)
-        ), dim=2)
-        y = self.part_classifier(class_input)  # (B, C, N)
+        if self.predict_parts:
+            class_input = torch.cat((
+                pointclouds,
+                mu.unsqueeze(1).expand(-1, N, -1)
+            ), dim=2)
+            y = self.part_classifier(class_input)  # (B, C, N)
 
-        if self.variational:
-            return x, y, mu, sigma
-        return x, y
+        if self.predict_parts:
+            if self.variational:
+                return x, y, mu, sigma
+            return x, y
+        else:
+            if self.variational:
+                return x, mu, sigma
+            return x
 
 
     def train_for_one_epoch(self, loader, optimizer, device='cuda'):
@@ -106,15 +123,34 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             optimizer.zero_grad()
 
             pointclouds = load['point_cloud'].to(device)
-            true_labels = load['part_mask'].to(device) # .flatten()
-            if self.variational:
-                reconstructions, labels, mu, sigma = self.forward(pointclouds)
+            true_label = load['part_mask'].to(device) # .flatten()
+            if self.variational and self.predict_parts:
+                reconstruction, label, mu, sigma = self.forward(pointclouds)
+            elif self.variational:
+                reconstruction, mu, sigma = self.forward(pointclouds)
+            elif self.predict_parts:
+                reconstruction, label = self.forward(pointclouds)
             else:
-                reconstructions, labels = self.forward(pointclouds)
+                reconstruction = self.forward(pointclouds)
 
-            recon_loss = chamfer_loss(pointclouds, reconstructions).mean()
-            xentr_loss = F.cross_entropy(labels, true_labels, reduction='none')
-            xentr_loss = xentr_loss.mean()
+            if self.encode_parts:
+                # use out_points / 4 points to construct each point
+                recon_loss = 0
+                recon_parts = torch.chunk(reconstruction,
+                        reconstruction.shape[-1] // self.num_parts,
+                        -1)
+                for part in range(self.num_parts):
+                    true_pc = pointclouds * (true_label==part)
+                    recon_loss += chamfer_loss(true_pc, recon_parts[part])
+            else:
+                recon_loss = chamfer_loss(pointclouds, reconstruction).mean()
+
+            if self.predict_parts:
+                xentr_loss = F.cross_entropy(label, true_label, reduction='none')
+                xentr_loss = xentr_loss.mean()
+            else:
+                xentr_loss = 0
+
             if self.variational:
                 kl_loss = - (1 + (torch.log(sigma) * 2) - torch.pow(mu, 2) - sigma * 2).mean() / 2
             else:
@@ -165,21 +201,43 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         kl_loss_meter = AverageMeter()
 
         reconstructions = []
+        labels = []
         if return_all_recon_loss:
             all_recon_loss = []
 
         for load in loader:
             pointclouds = load['point_cloud'].to(device)
-            true_labels = load['part_mask'].to(device) 
-            if self.variational:
-                reconstruction, labels, mu, sigma = self.forward(pointclouds)
+            true_label = load['part_mask'].to(device) 
+            if self.variational and self.predict_parts:
+                reconstruction, label, mu, sigma = self.forward(pointclouds)
+            elif self.variational:
+                reconstruction, mu, sigma = self.forward(pointclouds)
+                label = []
+            elif self.predict_parts:
+                reconstruction, label = self.forward(pointclouds)
             else:
-                reconstruction, labels = self.forward(pointclouds)
+                reconstruction = self.forward(pointclouds)
+                label = []
 
-            recon_losses = chamfer_loss(pointclouds, reconstruction)
+            if self.encode_parts:
+                # use out_points / 4 points to construct each point
+                recon_losses = 0
+                recon_parts = torch.chunk(reconstructions,
+                        reconstructions.shape[-1] // self.num_parts,
+                        -1)
+                for part in range(self.num_parts):
+                    true_pc = pointclouds * (true_label==part)
+                    recon_losses += chamfer_loss(true_pc, recon_parts[part])
+            else:
+                recon_losses = chamfer_loss(pointclouds, reconstruction)
             recon_loss = recon_losses.mean()
-            xentr_loss = F.cross_entropy(labels, true_labels, reduction='none')
-            xentr_loss = xentr_loss.mean()
+
+
+            if self.predict_parts:
+                xentr_loss = F.cross_entropy(label, true_label, reduction='none')
+                xentr_loss = xentr_loss.mean()
+            else:
+                xentr_loss = 0
 
             if self.variational:
                 kl_loss = - (1 + 2 * torch.log(sigma) - (torch.pow(mu, 2) + torch.pow(sigma, 2))).mean() / 2
@@ -197,6 +255,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             kl_loss_meter.update(kl_loss, pointclouds.shape[0])
 
             reconstructions += list(reconstruction)
+            labels += list(label)
             if return_all_recon_loss:
                 all_recon_loss += list(recon_losses)
 
