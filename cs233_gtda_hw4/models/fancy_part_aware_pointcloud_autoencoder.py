@@ -17,14 +17,15 @@ else:
 
 
 class FancyPartAwarePointcloudAutoencoder(nn.Module):
-    def __init__(self, encoder, decoder, part_classifier, part_lambda, class_decay=1,
-            decode_alpha=0.1):
+    def __init__(self, encoder, decoder, part_classifier, part_lambda, class_decay=1, class_decay_cadence=50,
+            decode_alpha=0.0):
         """ Part-aware AE initialization
         :param encoder: nn.Module acting as a point-cloud encoder.
         :param decoder: nn.Module acting as a point-cloud decoder.
         :param part_classifier: nn.Module acting as the second decoding branch that classifies the point part
         :param part_lambda: scalar multiple for the part classification loss
         :param class_decay: scalar multiple to decay the classification loss contribution
+        :param class_decay_cadence: decay class loss contribution every _ epochs
         :param decode_alpha: coefficient of L1 regularization on decoder
         """
         super().__init__()
@@ -33,7 +34,10 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         self.part_classifier = part_classifier
         self.part_lambda = part_lambda
         self.class_decay = class_decay
+        self.class_decay_cadence = class_decay_cadence
         self.decode_alpha = decode_alpha
+
+        self.epoch = 0
 
 
     def forward(self, pointclouds):
@@ -69,6 +73,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         loss_meter = AverageMeter()
         recon_loss_meter = AverageMeter()
         xentr_loss_meter = AverageMeter()
+        self.epoch += 1
 
         for load in tqdm(loader):
             optimizer.zero_grad()
@@ -90,7 +95,8 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             recon_loss_meter.update(recon_loss, pointclouds.shape[0])
             xentr_loss_meter.update(xentr_loss, pointclouds.shape[0])
 
-        self.part_lambda *= self.class_decay
+        if self.epoch % self.class_decay_cadence == 0:
+            self.part_lambda *= self.class_decay
         return loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg
     
     @torch.no_grad()
