@@ -54,7 +54,7 @@ class MLP(nn.Module):
 
 
 
-    def forward(self, x):
+    def forward(self, x, reshape_3d=False):
         """
         Run forward pass of MLP
         :param x: (B x in_feat_dim) point cloud
@@ -62,7 +62,10 @@ class MLP(nn.Module):
         B, k = x.shape
         for layer in self.layers:
             x = layer(x)
-        return x.view(B, -1, 3)
+        if reshape_3d:
+            return x.view(B, -1, 3)
+        else:
+            return x
 
 
     def l1_loss(self):
