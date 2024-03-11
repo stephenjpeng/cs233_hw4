@@ -101,7 +101,7 @@ predict_parts = args.predict_parts
 predict_part_exist = args.predict_part_exist
 variational = args.variational
 
-hdim = 128
+hdim = args.hdim
 
 encoder = PointNet(conv_dims=[32, 64, 64, 128, hdim * (2 if variational else 1)])
 decoder = MLP(hdim, [256, 384, out_n*3], b_norm=bnorm, dropout_rate=drop)
@@ -123,6 +123,7 @@ model = FancyPartAwarePointcloudAutoencoder(
 
 model_tag = (f'exp' + 
              f'_outn{out_n}' + 
+             f'_hdim{hdim}' + 
              f'_drop{drop}' + 
              f'{"_bnorm" if bnorm else ""}' + 
              f'_kl{kl_lambda:.0e}' + 
