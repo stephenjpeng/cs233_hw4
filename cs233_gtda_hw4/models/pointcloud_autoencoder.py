@@ -34,7 +34,7 @@ class PointcloudAutoencoder(nn.Module):
             :param pointclouds: B x N x 3
         """
         x = self.encoder(pointclouds)
-        x = self.decoder(x)
+        x = self.decoder(x, reshape_3d=True)
         return x
         
 

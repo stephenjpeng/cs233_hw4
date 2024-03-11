@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.masked import masked_tensor
 from tqdm.autonotebook import tqdm
 from ..in_out.utils import AverageMeter
 
@@ -86,7 +87,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         h = self.encoder(pointclouds)  # B x latent_dim
 
         if self.variational:
-            mu, logvar = torch.split(h, h.shape[-1] // 2, dim=-1) # each B x latent_dim / 2
+            mu, logvar = torch.chunk(h, 2, dim=-1) # each B x latent_dim / 2
             sigma = torch.exp(logvar / 2)
             if self.training:
                 z = mu + sigma * torch.randn(sigma.shape).to(self.device)
@@ -158,12 +159,12 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
                 # use out_points / 4 points to construct each part
                 recon_loss = 0
                 recon_parts = torch.chunk(reconstruction,
-                        reconstruction.shape[-2] // self.num_parts,
+                        self.num_parts,
                         -2)
                 for part in range(self.num_parts):
-                    true_pc = (pointclouds * (true_label==part).unsqueeze(-1).expand(-1, -1, 3)
-                        + 0.5 * (true_label!=part).unsqueeze(-1).expand(-1, -1, 3))
-                    recon_loss += chamfer_loss(true_pc, recon_parts[part]).mean()
+                    # true_pc = pointclouds * (true_label==part).unsqueeze(-1).expand(-1, -1, 3)
+                    mask = (true_label==part).float()
+                    recon_loss += chamfer_loss(pointclouds, recon_parts[part], mask).mean()
             else:
                 recon_loss = chamfer_loss(pointclouds, reconstruction).mean()
 
@@ -215,7 +216,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         """
         h = self.encoder(pointclouds)
         if self.variational:  # return mean of distribution
-            return torch.split(h, h.shape[-1] // 2, -1)[0]
+            return torch.chunk(h, 2, -1)[0]
         return h
         
 
@@ -259,12 +260,14 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
                 # use out_points / 4 points to construct each point
                 recon_losses = 0
                 recon_parts = torch.chunk(reconstruction,
-                        reconstruction.shape[-2] // self.num_parts,
+                        self.num_parts,
                         -2)
                 for part in range(self.num_parts):
-                    true_pc = (pointclouds * (true_label==part).unsqueeze(-1).expand(-1, -1, 3)
-                        + 0.5 * (true_label!=part).unsqueeze(-1).expand(-1, -1, 3))
-                    recon_losses += chamfer_loss(true_pc, recon_parts[part])
+                    # true_pc = pointclouds * (true_label==part).unsqueeze(-1).expand(-1, -1, 3)
+                    # mask = (true_label==part).max(axis=1)[0].float()
+                    # recon_losses += chamfer_loss(true_pc, recon_parts[part], mask)
+                    mask = (true_label==part).float()
+                    recon_losses += chamfer_loss(pointclouds, recon_parts[part], mask)
             else:
                 recon_losses = chamfer_loss(pointclouds, reconstruction)
             recon_loss = recon_losses.mean()

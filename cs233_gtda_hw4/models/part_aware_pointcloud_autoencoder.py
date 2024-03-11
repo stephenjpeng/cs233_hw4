@@ -44,7 +44,7 @@ class PartAwarePointcloudAutoencoder(nn.Module):
         h = self.encoder(pointclouds)  # B x latent_dim
 
         # AE branch
-        x = self.decoder(h)  # B x out_pts x 3
+        x = self.decoder(h, reshape_3d=True)  # B x out_pts x 3
 
         # part prediction branch
         class_input = torch.cat((
