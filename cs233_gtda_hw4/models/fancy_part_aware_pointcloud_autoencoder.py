@@ -256,11 +256,12 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             if self.predict_parts:
                 label = output[idx]
                 idx += 1
+            else:
+                label = []
+
             if self.predict_part_exist:
                 existence = output[idx]
                 idx += 1
-            if self.variational:
-                mu, sigma = output[idx:idx+2]
 
             if self.encode_parts:
                 # use out_points / 4 points to construct each point
@@ -311,10 +312,11 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             kl_loss_meter.update(kl_loss, pointclouds.shape[0])
 
             reconstructions += list(reconstruction)
-            labels += list(label)
+            labels += [label]
             if return_all_recon_loss:
                 all_recon_loss += list(recon_losses)
-        labels = torch.cat(labels)
+        if self.predict_parts:
+            labels = torch.cat(labels)
         if return_all_recon_loss:
             return (reconstructions, labels,
                     loss_meter.avg, recon_loss_meter.avg, xentr_loss_meter.avg,
@@ -328,7 +330,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         """ Reconstruct the point-cloud via the AE.
         :param pointcloud: pointcloud_data
         :param device: cpu? cuda?
-        :return: (reconstruction, float), average loss for the loader
+        :return: (reconstruction, label, loss), average loss for the loader
         """
         out = self.reconstruct([{
             'point_cloud': pointcloud.unsqueeze(0),
@@ -336,11 +338,12 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             }], device)
 
         r = out[0]
+        recon_loss = out[3]
 
         if self.predict_parts:
             l = out[1]
             if not return_logits:
-                l = torch.argmax(l, 0)
+                l = torch.argmax(l, 1)
         else:
             l = None
-        return r[0].squeeze(0), l
+        return r[0].squeeze(0), l, recon_loss
