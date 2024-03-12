@@ -1,5 +1,6 @@
 from collections import defaultdict
 import numpy as np
+import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
 
@@ -21,13 +22,14 @@ class EncodingDistance:
             # Map shape-net model id and part_id to location in distance matrix, (the order is the same).
             self.id_to_part_loc[(sn_id, part_id)] = i
 
-    def calculate(self, latent_codes, test_names):
+    def calculate(self, latent_codes, test_names, return_df=False):
         nn = NearestNeighbors(n_neighbors=2)
         nn.fit(latent_codes)
 
         encoding_distances = np.zeros(len(test_names))
         num_shared_parts = np.zeros(len(test_names))
         latent_distances = np.empty(len(test_names))
+        data = []
         for i, sn_name in enumerate(test_names):
             parts_of_model = set(self.sn_id_to_parts[sn_name])
 
@@ -59,6 +61,12 @@ class EncodingDistance:
                             self.id_to_part_loc[(matched_neighbor, k)],
                             self.id_to_part_loc[(sn_name, u)]]
             encoding_distances[i] += max(cand_distances)
+
+            data.append({'name': sn_name, 'match': matched_neighbor, 'dist': encoding_distances[i]})
+
+        if return_df:
+            return pd.DataFrame(data)
+
         return {
             'enc_dist': encoding_distances.sum(),
             'shared_pts': num_shared_parts.mean(),

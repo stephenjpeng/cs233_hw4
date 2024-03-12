@@ -23,7 +23,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             class_decay=1, class_decay_cadence=50, decode_alpha=0.0,
             predict_parts=True, predict_part_exist=False,
             variational=False, kl_lambda=0, exist_lambda=0, kl_decay=1, kl_decay_cadence=50, noise=0,
-            encode_parts=False):
+            encode_parts=False, penal_parts=0):
         """ Part-aware AE initialization
         :param encoder: nn.Module acting as a point-cloud encoder.
         :param decoder: nn.Module acting as a point-cloud decoder.
@@ -40,6 +40,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         :param vae_decay_cadence: decay KL loss contribution every _ epochs
         :param noise: variance of normal noise to add to inputs
         :param encode_parts: autoencode the parts
+        :param penal_parts: penalize nonzero reconstructions of nonexistent parts by this much
         """
         super().__init__()
         # not changing anytime soon
@@ -69,6 +70,7 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
         self.noise = noise
 
         self.encode_parts = encode_parts
+        self.penal_parts = penal_parts
 
         self.device = device
 
@@ -165,6 +167,10 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
                     # true_pc = pointclouds * (true_label==part).unsqueeze(-1).expand(-1, -1, 3)
                     mask = (true_label==part).float()
                     recon_loss += chamfer_loss(pointclouds, recon_parts[part], mask).mean()
+                    if self.penal_parts > 0:
+                        pmask = 1 - mask.max(1)[0]
+                        if pmask.sum() > 1e-10:
+                            recon_loss += (self.penal_parts * pmask * recon_parts[part].abs().sum((1, 2))).sum() / pmask.sum()
             else:
                 recon_loss = chamfer_loss(pointclouds, reconstruction).mean()
 

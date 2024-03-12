@@ -39,7 +39,6 @@ from cs233_gtda_hw4.models.mlp import MLP
 
 n_points = 1024  # number of points of each point-cloud
 n_parts = 4      # max number of parts of each shape
-n_train_epochs = 500 #400
 
 # batch-size of data loaders
 batch_size = 128 # if you can keep this too as is keep it, 
@@ -66,7 +65,7 @@ for split, loader in loaders.items():
 parser = argparse.ArgumentParser()
 parser.add_argument('--out_n', type=int, default=1024)
 parser.add_argument('--drop', type=float, default=0)
-parser.add_argument('--bnorm', type=bool, default=False)
+parser.add_argument('--bnorm', action='store_true', default=False)
 parser.add_argument('--noise', type=float, default=0)
 parser.add_argument('--alpha', type=float, default=0, help='regularizer for decoder')
 parser.add_argument('--cdec', type=float, default=1, help='decay for point classifier lambda')
@@ -75,11 +74,13 @@ parser.add_argument('--init_lr', type=float, default=9e-3, help='initial ADAM LR
 parser.add_argument('--exist_lambda', type=float, default=5e-3, help='part existence lambda')
 parser.add_argument('--kl_lambda', type=float, default=1e-5, help='KL divergence lambda')
 parser.add_argument('--kdec', type=float, default=1, help='decay (or growth) for KL lambda')
-parser.add_argument('--encode_parts', type=bool, default=False, help='encode each part separately')
-parser.add_argument('--predict_parts', type=bool, default=True, help='predict part of each point')
-parser.add_argument('--predict_part_exist', type=bool, default=False, help='predict existence of each part')
-parser.add_argument('--variational', type=bool, default=False, help='Variational AE instead of AE')
+parser.add_argument('--encode_parts', action='store_true', default=False)
+parser.add_argument('--predict_parts', action='store_true', default=True)
+parser.add_argument('--predict_part_exist', action='store_true', default=False)
+parser.add_argument('--penal_parts', type=float, default=0, help='penalize reconstructed non-parts')
+parser.add_argument('--variational', action='store_true', default=False)
 parser.add_argument('--hdim', type=int, default=128, help='Dimension of latent space')
+parser.add_argument('--n_epochs', type=int, default=500, help='epochs to train for')
 args = parser.parse_args()
 
 out_n = args.out_n
@@ -98,10 +99,12 @@ kl_lambda = args.kl_lambda
 kdec = args.kdec
 encode_parts = args.encode_parts
 predict_parts = args.predict_parts
+penal_parts = args.penal_parts
 predict_part_exist = args.predict_part_exist
 variational = args.variational
 
 hdim = args.hdim
+n_train_epochs = args.n_epochs
 
 encoder = PointNet(conv_dims=[32, 64, 64, 128, hdim * (2 if variational else 1)])
 decoder = MLP(hdim, [256, 384, out_n*3], b_norm=bnorm, dropout_rate=drop)
@@ -119,7 +122,9 @@ model = FancyPartAwarePointcloudAutoencoder(
     part_lambda=part_lambda, device=device, class_decay=cdec, decode_alpha=alpha,
     variational=variational, kl_lambda=kl_lambda, exist_lambda=exist_lambda, noise=noise,
     kl_decay=kdec, encode_parts=encode_parts, predict_parts=predict_parts,
-    predict_part_exist=predict_part_exist).to(device) # Students Work here
+    predict_part_exist=predict_part_exist, penal_parts=penal_parts).to(device) # Students Work here
+
+print(model)
 
 model_tag = (f'exp' + 
              f'_outn{out_n}' + 
@@ -132,6 +137,7 @@ model_tag = (f'exp' +
              f'_alpha{alpha}' +
              f'_kdec{kdec}' + 
              f'{f"_predpts{part_lambda}" if predict_parts else ""}' +
+             f'{f"_penpts{penal_parts}" if penal_parts > 0 else ""}' + 
              f'{f"_predex{exist_lambda}" if predict_part_exist else ""}' + 
              f'{"_encpts" if encode_parts else ""}' +
              f'{"_var" if variational else ""}' + 
@@ -194,7 +200,7 @@ for epoch in tqdm(range(start_epoch, start_epoch + n_train_epochs)):
             if epoch % 50 == 0:
                 test_names = []
                 latent_codes = []
-                for load in loaders['test']:
+                for load in loaders[phase]:
                     pointclouds = load['point_cloud']
                     test_names += load['model_name']
                     latent_codes += [l.cpu().numpy() for l in model.embed(pointclouds.to(device))]
