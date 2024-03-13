@@ -262,6 +262,8 @@ class FancyPartAwarePointcloudAutoencoder(nn.Module):
             if self.predict_part_exist:
                 existence = output[idx]
                 idx += 1
+            if self.variational:
+                mu, sigma = output[idx:idx+2]
 
             if self.encode_parts:
                 # use out_points / 4 points to construct each point
