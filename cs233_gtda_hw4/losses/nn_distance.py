@@ -51,7 +51,7 @@ def nn_distance(pc1, pc2, l1smooth=False, delta=1.0, l1=False):
     return dist1, idx1, dist2, idx2
 
 
-def chamfer_loss(pc_a, pc_b):
+def chamfer_loss(pc_a, pc_b, mask=None):
     """ Compute the chamfer loss for batched pointclouds.
     :param pc_a: torch.Tensor B x Na-points per point-cloud x 3
     :param pc_b: torch.Tensor B x Nb-points per point-cloud x 3
@@ -60,5 +60,11 @@ def chamfer_loss(pc_a, pc_b):
     other does not).
     """
     dist_a, _, dist_b, _ = nn_distance(pc_a, pc_b)
-    dist = dist_a.mean(1) + dist_b.mean(1) # reduce separately, sizes of points can be different
+    if mask is None:
+        dist = dist_a.mean(1) + dist_b.mean(1) # reduce separately, sizes of points can be different
+    else:
+        denom = mask.sum(1)
+        denom += torch.where(denom == 0, 1, 0)
+        dist = (dist_a * mask).sum(1) / denom + (dist_b).mean(1)
+        assert torch.all(torch.isfinite(dist))
     return dist
